@@ -38,6 +38,58 @@ import Foundation
         for host in ["https://beget.com", "beget.com/login", "beget.com:443", "user@beget.com", "beget.com\u{0}"] {
             assert(validProxyHost(host) == nil)
         }
+        let pageURL = URL(string: "https://example.com/")!
+        let html = """
+        <link rel="stylesheet" href="/site.css">
+        <link href='/assets/icon.png' rel='shortcut icon'>
+        <link rel="icon" href="https://cdn.example.com/icon.webp">
+        <link rel="icon" href="javascript:alert(1)">
+        <link rel="apple-touch-icon" href="//example.com/touch.png">
+        <link rel="apple-touch-icon-precomposed" href="/touch-precomposed.png">
+        <link rel="icon" href="/assets/icon.png">
+        """
+        assert(faviconURLs(in: html, pageURL: pageURL).map(\.absoluteString) == [
+            "https://example.com/assets/icon.png", "https://cdn.example.com/icon.webp", "https://example.com/touch.png",
+            "https://example.com/touch-precomposed.png",
+            "https://example.com/favicon.ico"
+        ])
+        assert(faviconURLs(in: "", pageURL: pageURL) == [URL(string: "https://example.com/favicon.ico")!])
+        assert(faviconRetryDelay(after: 1) == 30)
+        assert(faviconRetryDelay(after: 2) == 120)
+        assert(faviconRetryDelay(after: 3) == 600)
+        assert(faviconRetryDelay(after: 4) == 3_600)
+        assert(faviconRetryDelay(after: 20) == 3_600)
+        let oldRoute: [String: Any] = ["Label": "local.previous.directsites",
+            "ProgramArguments": [helperPath, "--reconcile"]]
+        let oldBrowser: [String: Any] = ["Label": "local.previous.directsites.browser",
+            "ProgramArguments": [helperPath, "--proxy"], "UserName": "nobody", "GroupName": "nobody"]
+        assert(legacyDaemonLabel(oldRoute) == "local.previous.directsites")
+        assert(legacyDaemonLabel(oldBrowser) == "local.previous.directsites.browser")
+        assert(legacyDaemonLabel(["Label": serviceID, "ProgramArguments": [helperPath, "--reconcile"]]) == nil)
+        assert(legacyDaemonLabel(["Label": "other.service", "ProgramArguments": [helperPath, "--reconcile"]]) == nil)
+        assert(legacyDaemonLabel(["Label": "local.previous.directsites", "ProgramArguments": ["/tmp/other", "--reconcile"]]) == nil)
+        assert(legacyDaemonLabel(["Label": "local.previous.directsites.browser",
+            "ProgramArguments": [helperPath, "--proxy"], "UserName": "root", "GroupName": "nobody"]) == nil)
+        let scratch = FileManager.default.temporaryDirectory.appendingPathComponent("DirectSitesTests-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        let extensionSource = scratch.appendingPathComponent("source", isDirectory: true)
+        try FileManager.default.createDirectory(at: extensionSource, withIntermediateDirectories: true)
+        try Data("{}".utf8).write(to: extensionSource.appendingPathComponent("manifest.json"))
+        try Data("chrome.proxy.settings.set();".utf8).write(to: extensionSource.appendingPathComponent("background.js"))
+        let userSupport = scratch.appendingPathComponent("other-user/Library/Application Support", isDirectory: true)
+        let installedExtension = try installChromeExtension(from: extensionSource, in: userSupport)
+        assert(installedExtension.path.hasPrefix(userSupport.path + "/"))
+        let installedManifest = try String(contentsOf: installedExtension.appendingPathComponent("manifest.json"), encoding: .utf8)
+        assert(installedManifest == "{}")
+        try Data("keep".utf8).write(to: installedExtension.appendingPathComponent("user-note"))
+        _ = try installChromeExtension(from: extensionSource, in: userSupport)
+        let preservedNote = try String(contentsOf: installedExtension.appendingPathComponent("user-note"), encoding: .utf8)
+        assert(preservedNote == "keep")
+        let manifestData = try Data(contentsOf: URL(fileURLWithPath: "ChromeExtension/manifest.json"))
+        let manifest = try JSONSerialization.jsonObject(with: manifestData) as? [String: Any]
+        assert(manifest?["manifest_version"] as? Int == 3)
+        assert(manifest?["permissions"] as? [String] == ["proxy"])
+        assert((manifest?["background"] as? [String: String])?["service_worker"] == "background.js")
         print("Core contract tests passed")
     }
 }

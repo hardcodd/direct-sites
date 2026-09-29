@@ -1,7 +1,7 @@
 import Foundation
 import Darwin
 
-let serviceID = "local.alex.directsites"
+let serviceID = "app.directsites"
 let serviceDirectory = "/Library/Application Support/DirectSites"
 let helperPath = serviceDirectory + "/DirectSitesHelper"
 let configPath = serviceDirectory + "/rules.json"

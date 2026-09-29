@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "Direct Sites for Chrome",
+  "version": "1.0.0",
+  "description": "Use the local Direct Sites proxy for this Chrome profile.",
+  "permissions": ["proxy"],
+  "background": {
+    "service_worker": "background.js"
+  }
+}

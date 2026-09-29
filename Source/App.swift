@@ -15,7 +15,27 @@ func localized(_ key: String) -> String { NSLocalizedString(key, comment: "") }
     private var proxyHealth: ProxyHealth?
     private var timer: Timer?
     private var icons: [String: NSImage] = [:]
-    private var requestedIcons: Set<String> = []
+    private var loadedCachedIcons: Set<String> = []
+    private var finishedIcons: Set<String> = []
+    private var activeIcons: Set<String> = []
+    private var iconFailures: [String: Int] = [:]
+    private var nextIconAttempt: [String: Date] = [:]
+    private let directIconSession = DirectSitesApp.makeIconSession(usingProxy: false)
+    private let proxyIconSession = DirectSitesApp.makeIconSession(usingProxy: true)
+    private static func makeIconSession(usingProxy: Bool) -> URLSession {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 8
+        configuration.timeoutIntervalForResource = 12
+        configuration.httpMaximumConnectionsPerHost = 2
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        configuration.urlCache = nil
+        if usingProxy {
+            configuration.connectionProxyDictionary = ["SOCKSEnable": 1, "SOCKSProxy": "127.0.0.1", "SOCKSPort": 17879]
+        }
+        return URLSession(configuration: configuration)
+    }
+    private let iconCacheDirectory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("Direct Sites/Favicons", isDirectory: true)
     private var dirty: Bool { rules != saved }
 
     static func main() {
@@ -37,6 +57,7 @@ func localized(_ key: String) -> String { NSLocalizedString(key, comment: "") }
             if FileManager.default.fileExists(atPath: configPath) { rules = try readJSON([Rule].self, configPath) }
             saved = rules
         } catch { showError(error) }
+        for rule in rules { loadCachedIcon(for: rule.host) }
         makeMenu()
         makeWindow()
         refresh(forceReload: true)
@@ -96,9 +117,15 @@ func localized(_ key: String) -> String { NSLocalizedString(key, comment: "") }
         summary.font = .systemFont(ofSize: 13)
         summary.textColor = .secondaryLabelColor
         root.addArrangedSubview(summary)
+        let browserSetup = NSStackView()
+        browserSetup.spacing = 8
         let firefox = NSButton(title: localized("firefoxSetup"), target: self, action: #selector(showFirefoxSetup))
         firefox.bezelStyle = .rounded
-        root.addArrangedSubview(firefox)
+        browserSetup.addArrangedSubview(firefox)
+        let chrome = NSButton(title: localized("chromeSetup"), target: self, action: #selector(showChromeSetup))
+        chrome.bezelStyle = .rounded
+        browserSetup.addArrangedSubview(chrome)
+        root.addArrangedSubview(browserSetup)
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("sites"))
         column.title = localized("sites")
         table.addTableColumn(column)
@@ -193,7 +220,7 @@ func localized(_ key: String) -> String { NSLocalizedString(key, comment: "") }
         badge.font = .systemFont(ofSize: 12, weight: .medium)
         badge.textColor = ["active", "externalDirect", "browserReady"].contains(key) ? .systemGreen : .secondaryLabelColor
         rowView.addArrangedSubview(badge)
-        requestIcon(for: rule.host)
+        requestIcon(for: rule)
         return rowView
     }
 
@@ -206,14 +233,17 @@ func localized(_ key: String) -> String { NSLocalizedString(key, comment: "") }
         let oldStale = isStale
         state = try? readJSON(ServiceState.self, statePath)
         let installed = FileManager.default.fileExists(atPath: configPath)
+        let legacyInstalled = (try? legacyDaemons()).map { !$0.isEmpty } ?? false
         if dirty { summary.stringValue = localized("unsaved") }
         else if !installed { summary.stringValue = localized("notInstalled") }
+        else if legacyInstalled { summary.stringValue = localized("migrationAvailable") }
         else if isStale { summary.stringValue = localized("stale") }
         else { summary.stringValue = localized("running") + " · " + state!.updated.formatted(date: .omitted, time: .standard) }
-        applyButton.isEnabled = dirty || !installed || isStale || proxyHealth == nil
+        applyButton.isEnabled = dirty || !installed || legacyInstalled || isStale || proxyHealth == nil
         if forceReload || oldStatus != state?.status || oldStale != isStale { table.reloadData() }
         updateDetails()
         refreshProxyHealth()
+        scheduleIcons()
     }
 
     private func refreshProxyHealth() {
@@ -284,6 +314,7 @@ func localized(_ key: String) -> String { NSLocalizedString(key, comment: "") }
             let rule = Rule(id: index.map { rules[$0].id } ?? UUID(), host: host, name: label.isEmpty ? host : label,
                             includeSubdomains: suffix.state == .on && numericAddress(host) == nil)
             if let index { rules[index] = rule } else { rules.append(rule) }
+            loadCachedIcon(for: host)
             refresh(forceReload: true)
         } catch { showError(error) }
     }
@@ -346,23 +377,95 @@ func localized(_ key: String) -> String { NSLocalizedString(key, comment: "") }
         alert.runModal()
     }
 
-    /// Fetches icons from the site itself, never from a third-party favicon service.
-    private func requestIcon(for host: String) {
-        guard numericAddress(host) == nil, requestedIcons.insert(host).inserted,
-              let url = URL(string: "https://" + host + "/favicon.ico") else { return }
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.timeoutIntervalForRequest = 6
-        configuration.timeoutIntervalForResource = 8
-        let session = URLSession(configuration: configuration)
-        session.dataTask(with: url) { [weak self] data, response, _ in
-            session.finishTasksAndInvalidate()
-            guard let data, data.count <= 1_048_576, (response as? HTTPURLResponse)?.statusCode == 200 else { return }
-            Task { @MainActor [weak self] in
-                guard let image = NSImage(data: data) else { return }
-                self?.icons[host] = image
-                self?.table.reloadData()
+    @objc private func showChromeSetup() {
+        guard let chrome = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.google.Chrome") else {
+            showError(AppError(message: localized("chromeMissing")))
+            return
+        }
+        do {
+            guard let resources = Bundle.main.resourceURL else { throw AppError(message: localized("missingChromeExtension")) }
+            let source = resources.appendingPathComponent("ChromeExtension", isDirectory: true)
+            let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            let extensionDirectory = try installChromeExtension(from: source, in: support)
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(extensionDirectory.path, forType: .string)
+            let alert = NSAlert()
+            alert.messageText = localized("chromeSetup")
+            alert.informativeText = localized("chromeInstructions") + "\n\n" + (extensionDirectory.path as NSString).abbreviatingWithTildeInPath
+            alert.addButton(withTitle: localized("openChromeExtensions"))
+            alert.addButton(withTitle: localized("cancel"))
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+            Task { @MainActor in
+                do {
+                    _ = try await NSWorkspace.shared.open([URL(string: "chrome://extensions/")!], withApplicationAt: chrome,
+                                                          configuration: NSWorkspace.OpenConfiguration())
+                } catch { showError(error) }
             }
-        }.resume()
+        } catch { showError(error) }
+    }
+
+    private func loadCachedIcon(for host: String) {
+        guard numericAddress(host) == nil, (try? normalize(host)) == host else { return }
+        let url = iconCacheDirectory.appendingPathComponent(host)
+        if loadedCachedIcons.insert(host).inserted,
+           let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= 1_048_576,
+           let data = try? Data(contentsOf: url),
+           let image = NSImage(data: data), image.isValid {
+            icons[host] = image
+        }
+    }
+
+    /// Checks the site once per launch and retries failed checks with increasing delays.
+    private func requestIcon(for rule: Rule) {
+        let host = rule.host
+        guard numericAddress(host) == nil, (try? normalize(host)) == host else { return }
+        guard activeIcons.count < 4, !activeIcons.contains(host), !finishedIcons.contains(host),
+              nextIconAttempt[host, default: .distantPast] <= Date() else { return }
+        activeIcons.insert(host)
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            if let (data, image) = await self.fetchIcon(for: host, usingProxy: rule.includeSubdomains == true) {
+                self.icons[host] = image
+                self.finishedIcons.insert(host)
+                self.iconFailures.removeValue(forKey: host)
+                self.nextIconAttempt.removeValue(forKey: host)
+                try? FileManager.default.createDirectory(at: self.iconCacheDirectory, withIntermediateDirectories: true)
+                try? data.write(to: self.iconCacheDirectory.appendingPathComponent(host), options: .atomic)
+                self.table.reloadData()
+            } else {
+                let failures = self.iconFailures[host, default: 0] + 1
+                self.iconFailures[host] = failures
+                self.nextIconAttempt[host] = Date().addingTimeInterval(faviconRetryDelay(after: failures))
+            }
+            self.activeIcons.remove(host)
+            self.scheduleIcons()
+        }
+    }
+
+    private func scheduleIcons() {
+        for rule in rules { requestIcon(for: rule) }
+    }
+
+    /// Tries the icons advertised by the site's home page, then its conventional favicon path.
+    private func fetchIcon(for host: String, usingProxy: Bool) async -> (Data, NSImage)? {
+        guard let homeURL = URL(string: "https://" + host + "/") else { return nil }
+        let session = usingProxy ? proxyIconSession : directIconSession
+        var pageURL = homeURL
+        var html = ""
+        if let (data, response) = try? await session.data(from: homeURL),
+           let http = response as? HTTPURLResponse, http.statusCode == 200,
+           let redirectedURL = response.url, redirectedURL.scheme == "https" {
+            pageURL = redirectedURL
+            html = String(decoding: data.prefix(524_288), as: UTF8.self)
+        }
+        for url in faviconURLs(in: html, pageURL: pageURL) {
+            guard let (data, response) = try? await session.data(from: url),
+                  let http = response as? HTTPURLResponse, http.statusCode == 200,
+                  response.url?.scheme == "https",
+                  data.count <= 1_048_576, let image = NSImage(data: data), image.isValid else { continue }
+            return (data, image)
+        }
+        return nil
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool { canClose() }

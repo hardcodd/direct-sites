@@ -21,6 +21,7 @@ import Darwin
                 let rules = try JSONDecoder().decode([Rule].self, from: data)
                 try validate(rules)
                 try prepareDirectory()
+                let previousJobs = try legacyDaemons()
                 try withLock {
                     let source = URL(fileURLWithPath: args[0]).resolvingSymlinksInPath()
                     let target = URL(fileURLWithPath: helperPath)
@@ -41,23 +42,15 @@ import Darwin
                         .write(to: URL(fileURLWithPath: proxyPlistPath), options: .atomic)
                     try FileManager.default.setAttributes([.posixPermissions: 0o644, .ownerAccountID: 0, .groupOwnerAccountID: 0], ofItemAtPath: proxyPlistPath)
                 }
-                if try run("/bin/launchctl", ["print", "system/" + serviceID]).0 != 0 {
-                    let result = try run("/bin/launchctl", ["bootstrap", "system", plistPath])
-                    guard result.0 == 0 else { throw AppError(message: result.1) }
-                }
-                _ = try run("/bin/launchctl", ["kickstart", "system/" + serviceID])
-                if try run("/bin/launchctl", ["print", "system/" + proxyServiceID]).0 != 0 {
-                    let result = try run("/bin/launchctl", ["bootstrap", "system", proxyPlistPath])
-                    guard result.0 == 0 else { throw AppError(message: result.1) }
-                } else {
-                    // Explicit Apply can also install a new proxy binary; reconnect current browser sockets.
-                    let result = try run("/bin/launchctl", ["kickstart", "-k", "system/" + proxyServiceID])
-                    guard result.0 == 0 else { throw AppError(message: result.1) }
-                }
+                try activateServices(migrating: previousJobs)
             case "--reconcile":
                 try prepareDirectory()
                 try withLock { try reconcile() }
             case "--uninstall":
+                let previousJobs = try legacyDaemons()
+                for job in previousJobs where try serviceIsLoaded(job.label) {
+                    try checkedLaunchctl(["bootout", "system/" + job.label])
+                }
                 _ = try run("/bin/launchctl", ["bootout", "system/" + proxyServiceID])
                 _ = try run("/bin/launchctl", ["bootout", "system/" + serviceID])
                 try prepareDirectory()
@@ -66,7 +59,8 @@ import Darwin
                     try reconcile()
                     let state = try readJSON(ServiceState.self, statePath)
                     guard state.owned.isEmpty else { throw AppError(message: "Route cleanup failed; retry removal") }
-                    for path in [proxyPlistPath, plistPath, helperPath, configPath, statePath] where FileManager.default.fileExists(atPath: path) {
+                    for path in previousJobs.map(\.url.path) + [proxyPlistPath, plistPath, helperPath, configPath, statePath]
+                        where FileManager.default.fileExists(atPath: path) {
                         try FileManager.default.removeItem(atPath: path)
                     }
                 }
@@ -75,6 +69,58 @@ import Darwin
         } catch {
             FileHandle.standardError.write(Data((error.localizedDescription + "\n").utf8))
             exit(1)
+        }
+    }
+
+    private static func serviceIsLoaded(_ label: String) throws -> Bool {
+        try run("/bin/launchctl", ["print", "system/" + label]).0 == 0
+    }
+
+    private static func checkedLaunchctl(_ arguments: [String]) throws {
+        let result = try run("/bin/launchctl", arguments)
+        guard result.0 == 0 else { throw AppError(message: result.1) }
+    }
+
+    /// Replaces validated older jobs only after the new job definitions are ready.
+    private static func activateServices(migrating previousJobs: [LegacyDaemon]) throws {
+        let routeWasLoaded = try serviceIsLoaded(serviceID)
+        let proxyWasLoaded = try serviceIsLoaded(proxyServiceID)
+        var stopped: [LegacyDaemon] = []
+        do {
+            for job in previousJobs where try serviceIsLoaded(job.label) {
+                try checkedLaunchctl(["bootout", "system/" + job.label])
+                stopped.append(job)
+            }
+            if routeWasLoaded {
+                try checkedLaunchctl(["kickstart", "system/" + serviceID])
+            } else {
+                try checkedLaunchctl(["bootstrap", "system", plistPath])
+                try checkedLaunchctl(["kickstart", "system/" + serviceID])
+            }
+            if proxyWasLoaded {
+                // Applying a new helper must reconnect sockets using the current binary.
+                try checkedLaunchctl(["kickstart", "-k", "system/" + proxyServiceID])
+            } else {
+                try checkedLaunchctl(["bootstrap", "system", proxyPlistPath])
+            }
+            for job in previousJobs { try FileManager.default.removeItem(at: job.url) }
+        } catch {
+            let original = error
+            if !proxyWasLoaded, (try? serviceIsLoaded(proxyServiceID)) == true {
+                _ = try? run("/bin/launchctl", ["bootout", "system/" + proxyServiceID])
+            }
+            if !routeWasLoaded, (try? serviceIsLoaded(serviceID)) == true {
+                _ = try? run("/bin/launchctl", ["bootout", "system/" + serviceID])
+            }
+            for job in previousJobs where !FileManager.default.fileExists(atPath: job.url.path) {
+                try? job.plist.write(to: job.url, options: .atomic)
+                try? FileManager.default.setAttributes([.posixPermissions: 0o644, .ownerAccountID: 0, .groupOwnerAccountID: 0],
+                                                       ofItemAtPath: job.url.path)
+            }
+            for job in stopped where (try? serviceIsLoaded(job.label)) == false {
+                _ = try? run("/bin/launchctl", ["bootstrap", "system", job.url.path])
+            }
+            throw original
         }
     }
 
