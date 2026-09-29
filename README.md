@@ -1,12 +1,41 @@
-# Direct Sites
+<p align="center">
+  <img src="assets/direct-sites-hero.png" alt="Illustration of Direct Sites routing selected macOS browser traffic directly while other traffic keeps its normal system route" width="100%">
+</p>
 
-![Direct Sites icon](AppIcon-preview.png)
+<p align="center">
+  <img src="AppIcon-preview.png" alt="Direct Sites application icon" width="112">
+</p>
 
-Нативное приложение для macOS, которое направляет выбранные сайты в обход VPN. Добавь основной домен — например, `example.com` — и Firefox или Google Chrome смогут подключаться напрямую ко всем его поддоменам. Для других приложений доступен режим исключений по IP.
+<h1 align="center">Direct Sites</h1>
 
-Приложение написано на Swift/AppKit без сторонних библиотек. Интерфейс доступен на русском и английском. Список сохраняется, фоновые службы продолжают работу после закрытия окна.
+<p align="center">
+  <strong>Выбранные сайты — напрямую. Остальной трафик — по обычному маршруту, включая VPN.</strong>
+</p>
 
-[Скачать релиз](https://github.com/hardcodd/direct-sites/releases/latest) · [История изменений](CHANGELOG.md) · [Спецификация](SPECS.md) · [MIT License](LICENSE)
+<p align="center">
+  Нативная утилита для macOS: направляет нужные сайты напрямую в Firefox и Google Chrome, включая поддомены, и создаёт IP-исключения для других приложений.
+</p>
+
+<p align="center">
+  <a href="https://github.com/hardcodd/direct-sites/releases/latest"><strong>Скачать последнюю версию для macOS</strong></a>
+  &nbsp;·&nbsp;
+  <a href="CHANGELOG.md">История изменений</a>
+  &nbsp;·&nbsp;
+  <a href="SPECS.md">Спецификация</a>
+  &nbsp;·&nbsp;
+  <a href="LICENSE">MIT License</a>
+</p>
+
+## Почему Direct Sites
+
+| | Что это даёт |
+| --- | --- |
+| **Точные доменные правила** | Добавь `example.com` — Firefox или Chrome подключатся напрямую к нему и к `api.example.com`, но не к похожим или чужим доменам. |
+| **VPN остаётся маршрутом по умолчанию** | Неподходящий под правило трафик использует обычную системную маршрутизацию, в том числе активный VPN. Direct Sites не меняет системный маршрут по умолчанию. |
+| **Нативно и прозрачно** | Swift/AppKit без сторонних библиотек. TLS передаётся без расшифровки, сертификаты не устанавливаются. |
+| **Не только браузеры** | Для других приложений доступны исключения по IP с проверкой маршрутов в фоне. |
+
+Приложение доступно на русском и английском. Список правил сохраняется, а фоновые службы продолжают работать после закрытия окна.
 
 ## Требования и установка
 
