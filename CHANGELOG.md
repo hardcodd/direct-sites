@@ -4,7 +4,7 @@
 
 Published versions and changes planned for the next release. Version dates refer to their Git tags.
 
-## Unreleased
+## 0.4.0 — October 12, 2026
 
 - Clear the entire domain/IP list with confirmation, including hidden rules; save through Apply while retaining background services and system proxy settings.
 - Search names, domains, Unicode hosts and IPs; filter rule types/readiness, reverse sorting, and collapse type or related-domain groups. Presentation preferences persist locally, with UUID-based editing and removal after list navigation.

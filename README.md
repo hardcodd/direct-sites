@@ -25,13 +25,13 @@ The interface supports English and Russian. Saved rules and background services 
 - Browsers that honor macOS HTTP/HTTPS proxy settings. System mode targets Safari, Chrome, Yandex and Firefox; compatibility needs verification in each browser version.
 - A VPN that permits connections through the physical interface. A strict kill switch may block them.
 
-The published `Direct-Sites-v0.3.0-macOS-arm64.zip` supports Firefox PAC and the Chrome extension. **System mode is an unreleased source change; build from source to use it.** Extract the archive and move **Direct Sites.app** to **Applications**. It is ad-hoc signed, without Apple Developer ID signing or notarization. macOS may block its first launch. If you trust the source and archive, use the macOS Privacy & Security approval flow or build the application yourself.
+The published `Direct-Sites-v0.4.0-macOS-arm64.zip` includes system proxy mode, rule-list navigation and bulk clearing, while retaining Firefox PAC and the Chrome extension. Extract the archive and move **Direct Sites.app** to **Applications**. It is ad-hoc signed, without Apple Developer ID signing or notarization. macOS may block its first launch. If you trust the source and archive, use the macOS Privacy & Security approval flow or build the application yourself.
 
 Opening the window does not install services. **Apply** installs them through the system administrator prompt. The application never receives or stores your password.
 
 ## Browsers: domains and subdomains
 
-### Finding and organizing rules (unreleased)
+### Finding and organizing rules
 
 Use the search field or **⌘F** to find names, domains and IP addresses. Paste a full URL to search its host; Unicode domain spelling, resolved IPs and observed browser hosts are searchable too. Multiple words narrow the results. **Escape** clears the query, and **Reset** clears both the search and rule filter.
 
@@ -45,7 +45,7 @@ To remove every domain and IP address at once, choose **Clear list…**, confirm
 2. Keep **Domain and all subdomains — browser mode** enabled.
 3. Choose **Apply** and authorize the change.
 
-### Shared system mode (unreleased)
+### Shared system mode
 
 1. Choose **Enable system proxy**. The app applies the current list and updates services, then sets HTTP/HTTPS proxies to `127.0.0.1:17879` on enabled physical Ethernet/Wi-Fi services and the primary registered network service, including a VPN. macOS requests administrator authorization.
 2. Safari, Chrome and Yandex use system settings unless an extension or policy overrides them. Disable the previous Direct Sites Chrome extension and other proxy overrides.

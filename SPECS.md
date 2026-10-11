@@ -2,7 +2,7 @@
 
 # Direct Sites — product specification
 
-This document describes version 0.3.0 and the unreleased system proxy mode. It is the public product contract for users and contributors.
+This document describes version 0.4.0. It is the public product contract for users and contributors.
 
 ## Purpose and platform
 
@@ -67,7 +67,7 @@ Disable system mode before stopping the service. Removal restores owned system p
 
 A running-service status is not proof that a website will load. VPN kill switches, DNS behavior, third-party login domains, IPv6 connectivity and CDN address variation may prevent access. Domains used by external authentication must be added separately. The browser must supply a hostname for suffix matching; an already-resolved IP cannot be mapped reliably to its original domain.
 
-## Rule-list navigation (unreleased)
+## Rule-list navigation
 
 - Search all tokens across names, canonical/Unicode hosts, resolved IPs and observed matching browser hosts. Pasted HTTP(S) URLs search their host. Search ignores case and diacritics.
 - Default to address sorting and browser/IP-route groups. Offer name/original sorting, reversal, all/browser/routes/attention filters, related configured-domain grouping and an ungrouped view. Related groups use existing ancestor rules rather than guessed public suffixes.
@@ -80,7 +80,7 @@ Verified locally on October 12, 2026: list contracts, existing core/socket tests
 
 ## Acceptance and verification
 
-The 0.3.0 release increments the application version and build number, includes the Chrome extension in the signed app bundle, and provides an arm64 zip archive plus a SHA-256 checksum file. The release notes must identify verification performed on a real Chrome profile and limitations that remain unverified.
+The 0.4.0 release uses build 8 and packages system proxy maintenance, rule-list navigation and bulk clearing in the signed app bundle, retaining the Chrome extension. It provides an arm64 zip archive plus a SHA-256 checksum file. Release notes identify the automated and native integration checks actually performed and limitations that remain unverified.
 
 - Build the GUI and helper with Swift 6 and warnings treated as errors.
 - Run the assertion suite in `Source/Tests.swift` without compiler optimizations disabling assertions. It covers normalization, rejected input, physical gateway selection, cached DNS, shared routes, ownership, domain boundaries, backward-compatible rule decoding and favicon discovery and retry policy.
@@ -94,7 +94,7 @@ The 0.3.0 release increments the application version and build number, includes 
 
 Automated core tests do not replace the privileged integration checks above. Release notes state the checks actually performed.
 
-## System proxy mode (unreleased)
+## System proxy mode
 
 - Provide an explicit enable/disable control for macOS HTTP and HTTPS proxies on physical Ethernet/Wi-Fi services and the currently primary registered network service, including a VPN. Do not change VPN transport configuration or the default route. Preserve and restore proxy protocol enablement as well as managed values.
 - Use the existing loopback port and domain routing for HTTP requests and HTTPS CONNECT tunnels, retaining SOCKS5 and local health/PAC endpoints. Never decrypt TLS.
