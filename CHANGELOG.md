@@ -1,25 +1,34 @@
-# История изменений
+**English** | [Русский](CHANGELOG.ru.md)
 
-Здесь перечислены изменения опубликованных версий и то, что готовится к следующему выпуску. Дата рядом с версией — дата соответствующего Git-тега.
+# Changelog
 
-## Ещё не выпущено
+Published versions and changes planned for the next release. Version dates refer to their Git tags.
 
-Изменений пока нет.
+## Unreleased
 
-## 0.3.0 — 29 сентября 2026
+- Clear the entire domain/IP list with confirmation, including hidden rules; save through Apply while retaining background services and system proxy settings.
+- Search names, domains, Unicode hosts and IPs; filter rule types/readiness, reverse sorting, and collapse type or related-domain groups. Presentation preferences persist locally, with UUID-based editing and removal after list navigation.
+- Persistent system-mode intent and a background monitor repair cleared/disabled proxies after network changes, with a five-second fallback check. Explicit disable stops maintenance before recovery; active foreign proxies remain protected.
+- Shared system HTTP/HTTPS proxy mode targeting Safari, Chrome, Yandex and Firefox. Firefox requires selecting system proxy settings; disable the previous Chrome extension.
+- Saved proxy preferences, safe restoration, external change protection and recovery before service removal.
+- HTTP forwarding and HTTPS CONNECT, retaining SOCKS5 and IP exceptions.
+- Protocol and preference recovery tests. Verified the four installed browsers with hidemy.name active, direct and VPN socket routes, and exact restoration of network proxy preferences. Reboot recovery remains unverified.
+- Compatible CONNECT authority handling for Safari and reliable launchd service replacement during helper updates.
 
-### Добавлено
+## 0.3.0 — September 29, 2026
 
-- Поддержка Google Chrome через расширение с настройкой прокси для отдельного профиля.
-- Кнопка настройки Chrome в приложении.
-- Поиск фавиконок в HTML сайта, локальный кэш и повторные попытки после ошибок.
+### Added
 
-### Изменено
+- Google Chrome support through a proxy extension for individual profiles.
+- Chrome setup button.
+- HTML favicon discovery, local caching and retries after failures.
 
-- Фавиконки браузерных правил загружаются через локальный прокси Direct Sites.
-- Идентификаторы приложения и фоновых служб больше не содержат личного имени; при применении обновления предусмотрен переход со старых служб с сохранением правил и маршрутов.
-- Путь к расширению Chrome отображается в окне настройки через `~` вместо имени пользователя.
+### Changed
 
-## 0.2.1 — 28 сентября 2026
+- Browser-rule favicons load through the local Direct Sites proxy.
+- App and service identifiers no longer contain a personal name. Applying an update migrates older services while preserving rules and routes.
+- Chrome extension setup displays the folder path using `~` instead of the account name.
 
-- Первый опубликованный выпуск: приложение для macOS с правилами по домену в Firefox, IP-маршрутами для других программ, фоновыми службами, русским и английским интерфейсом и сборкой из исходников.
+## 0.2.1 — September 28, 2026
+
+- First published release: native macOS app with Firefox domain rules, IP routes for other applications, background services, English and Russian UI and source builds.

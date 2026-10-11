@@ -1,5 +1,6 @@
 import Foundation
 import Darwin
+import SystemConfiguration
 
 /// Privileged, noninteractive helper. Only validated rules cross the GUI privilege boundary.
 @main struct Helper {
@@ -30,8 +31,8 @@ import Darwin
                         try FileManager.default.setAttributes([.posixPermissions: 0o755, .ownerAccountID: 0, .groupOwnerAccountID: 0], ofItemAtPath: helperPath)
                     }
                     try writeJSON(rules, configPath)
-                    let plist: [String: Any] = ["Label": serviceID, "ProgramArguments": [helperPath, "--reconcile"],
-                        "RunAtLoad": true, "StartInterval": 30, "ProcessType": "Background", "Umask": 0o022]
+                    let plist: [String: Any] = ["Label": serviceID, "ProgramArguments": [helperPath, "--monitor"],
+                        "RunAtLoad": true, "KeepAlive": true, "ThrottleInterval": 5, "ProcessType": "Background", "Umask": 0o022]
                     try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
                         .write(to: URL(fileURLWithPath: plistPath), options: .atomic)
                     try FileManager.default.setAttributes([.posixPermissions: 0o644, .ownerAccountID: 0, .groupOwnerAccountID: 0], ofItemAtPath: plistPath)
@@ -43,10 +44,31 @@ import Darwin
                     try FileManager.default.setAttributes([.posixPermissions: 0o644, .ownerAccountID: 0, .groupOwnerAccountID: 0], ofItemAtPath: proxyPlistPath)
                 }
                 try activateServices(migrating: previousJobs)
+            case "--system-proxy":
+                guard args.count == 3, ["on", "off"].contains(args[2]) else { throw AppError(message: "Invalid proxy operation") }
+                try prepareDirectory()
+                if args[2] == "on" {
+                    var ready = false
+                    for _ in 0..<5 {
+                        let response = try run("/usr/bin/curl", ["--noproxy", "*", "--silent", "--fail", "--max-time", "2", "http://127.0.0.1:17879/status"])
+                        if response.0 == 0, let health = try? JSONDecoder().decode(ProxyHealth.self, from: Data(response.1.utf8)), health.version >= 2 {
+                            ready = true; break
+                        }
+                        usleep(200_000)
+                    }
+                    guard ready else { throw AppError(message: "systemProxyNotReady") }
+                }
+                try withLock { try SystemProxy.setEnabled(args[2] == "on") }
             case "--reconcile":
                 try prepareDirectory()
                 try withLock { try reconcile() }
+            case "--monitor":
+                guard args.count == 2 else { throw AppError(message: "Invalid monitor operation") }
+                try prepareDirectory()
+                try monitor()
             case "--uninstall":
+                try prepareDirectory()
+                try withLock { try SystemProxy.setEnabled(false) }
                 let previousJobs = try legacyDaemons()
                 for job in previousJobs where try serviceIsLoaded(job.label) {
                     try checkedLaunchctl(["bootout", "system/" + job.label])
@@ -59,7 +81,7 @@ import Darwin
                     try reconcile()
                     let state = try readJSON(ServiceState.self, statePath)
                     guard state.owned.isEmpty else { throw AppError(message: "Route cleanup failed; retry removal") }
-                    for path in previousJobs.map(\.url.path) + [proxyPlistPath, plistPath, helperPath, configPath, statePath]
+                    for path in previousJobs.map(\.url.path) + [proxyPlistPath, plistPath, helperPath, configPath, statePath, systemProxyModePath]
                         where FileManager.default.fileExists(atPath: path) {
                         try FileManager.default.removeItem(atPath: path)
                     }
@@ -69,6 +91,51 @@ import Darwin
         } catch {
             FileHandle.standardError.write(Data((error.localizedDescription + "\n").utf8))
             exit(1)
+        }
+    }
+
+    /// Keeps system-mode intent across resets, network changes and GUI exit. Notifications wake the
+    /// serial monitor; a five-second poll handles missed events. IP reconciliation retains its interval.
+    /// Active foreign proxy conflicts are reported instead of being overwritten. No password is needed
+    /// after the authorized launchd installation, and an OFF marker prevents automatic reactivation.
+    private static func monitor() throws -> Never {
+        guard let store = SCDynamicStoreCreate(nil, "Direct Sites monitor" as CFString, { _, _, _ in
+            CFRunLoopStop(CFRunLoopGetCurrent())
+        }, nil),
+              SCDynamicStoreSetNotificationKeys(store,
+                ["State:/Network/Global/IPv4", "State:/Network/Global/IPv6", "State:/Network/Global/Proxies"] as CFArray,
+                ["State:/Network/Service/.*/Proxies", "Setup:/Network/Service/.*"] as CFArray),
+              let source = SCDynamicStoreCreateRunLoopSource(nil, store, 0) else {
+            throw AppError(message: "systemProxyFailed")
+        }
+        CFRunLoopAddSource(CFRunLoopGetCurrent(), source, .defaultMode)
+        var lastRoutes: TimeInterval = -.infinity
+        var lastError: String?
+        while true {
+            var failure: String?
+            do {
+                try withLock {
+                    do {
+                        if try SystemProxy.requestedEnabled() {
+                            let response = try run("/usr/bin/curl", ["--noproxy", "*", "--silent", "--fail", "--max-time", "2", "http://127.0.0.1:17879/status"])
+                            guard response.0 == 0,
+                                  let health = try? JSONDecoder().decode(ProxyHealth.self, from: Data(response.1.utf8)), health.version >= 2 else {
+                                throw AppError(message: "systemProxyNotReady")
+                            }
+                            try SystemProxy.maintain()
+                        }
+                    } catch { failure = error.localizedDescription }
+                    if ProcessInfo.processInfo.systemUptime - lastRoutes >= 30 {
+                        try reconcile()
+                        lastRoutes = ProcessInfo.processInfo.systemUptime
+                    }
+                }
+            } catch { failure = error.localizedDescription }
+            if let failure, failure != lastError {
+                FileHandle.standardError.write(Data((failure + "\n").utf8))
+            }
+            lastError = failure
+            CFRunLoopRunInMode(.defaultMode, 5, false)
         }
     }
 
@@ -92,17 +159,14 @@ import Darwin
                 stopped.append(job)
             }
             if routeWasLoaded {
-                try checkedLaunchctl(["kickstart", "system/" + serviceID])
-            } else {
-                try checkedLaunchctl(["bootstrap", "system", plistPath])
-                try checkedLaunchctl(["kickstart", "system/" + serviceID])
+                try checkedLaunchctl(["bootout", "system/" + serviceID])
             }
-            if proxyWasLoaded {
-                // Applying a new helper must reconnect sockets using the current binary.
-                try checkedLaunchctl(["kickstart", "-k", "system/" + proxyServiceID])
-            } else {
-                try checkedLaunchctl(["bootstrap", "system", proxyPlistPath])
-            }
+            // Reload definitions after replacing the signed helper. A kickstart alone can retain
+            // launchd's old code requirement and reject the new ad-hoc signature on recent macOS.
+            try checkedLaunchctl(["bootstrap", "system", plistPath])
+            try checkedLaunchctl(["kickstart", "system/" + serviceID])
+            if proxyWasLoaded { try checkedLaunchctl(["bootout", "system/" + proxyServiceID]) }
+            try checkedLaunchctl(["bootstrap", "system", proxyPlistPath])
             for job in previousJobs { try FileManager.default.removeItem(at: job.url) }
         } catch {
             let original = error

@@ -2,6 +2,7 @@ import Foundation
 
 @main struct CoreTests {
     static func main() throws {
+        try runRuleListTests()
         assert((try? normalize("https://cp.beget.com/login")) == "cp.beget.com")
         assert((try? normalize(" Example.COM. ")) == "example.com")
         assert((try? normalize("178.248.232.144")) == "178.248.232.144")
@@ -90,6 +91,88 @@ import Foundation
         assert(manifest?["manifest_version"] as? Int == 3)
         assert(manifest?["permissions"] as? [String] == ["proxy"])
         assert((manifest?["background"] as? [String: String])?["service_worker"] == "background.js")
+        let tunnel = try parseProxyHTTPRequest("CONNECT cp.beget.com:443 HTTP/1.1\r\nHost: cp.beget.com:443\r\n\r\n")
+        assert(tunnel.host == "cp.beget.com" && tunnel.port == 443 && tunnel.isTunnel)
+        assert((try? parseProxyHTTPRequest("CONNECT cp.beget.com:443 HTTP/1.1\r\nHost: cp.beget.com\r\n\r\n"))?.port == 443)
+        assert((try? parseProxyHTTPRequest("CONNECT cp.beget.com:443 HTTP/1.0\r\n\r\n"))?.port == 443)
+        assert((try? parseProxyHTTPRequest("CONNECT cp.beget.com:443 HTTP/1.1\r\n\r\n")) == nil)
+        assert((try? parseProxyHTTPRequest("CONNECT cp.beget.com:443 HTTP/1.1\r\nHost: cp.beget.com:80\r\n\r\n")) == nil)
+        let forward = try parseProxyHTTPRequest("GET http://example.com/a?q=1 HTTP/1.1\r\nHost: example.com\r\nProxy-Authorization: secret\r\nConnection: keep-alive\r\n\r\n")
+        assert(forward.host == "example.com" && forward.port == 80)
+        assert(forward.header.hasPrefix("GET /a?q=1 HTTP/1.1\r\n"))
+        assert(!forward.header.contains("secret") && forward.header.contains("Connection: close"))
+        assert((try? parseProxyHTTPRequest("CONNECT [2001:4860:4860::8888]:443 HTTP/1.1\r\nHost: [2001:4860:4860::8888]:443\r\n\r\n"))?.port == 443)
+        for request in [
+            "CONNECT example.com HTTP/1.1\r\nHost: example.com\r\n\r\n",
+            "CONNECT example.com:0 HTTP/1.1\r\nHost: example.com:0\r\n\r\n",
+            "GET http://example.com/ HTTP/1.1\r\nHost: evil.example\r\n\r\n",
+            "GET http://user:pass@example.com/ HTTP/1.1\r\nHost: example.com\r\n\r\n",
+            "GET http://example.com/ HTTP/1.1\r\nHost: example.com\r\nHost: example.com\r\n\r\n",
+            "POST http://example.com/ HTTP/1.1\r\nHost: example.com\r\nContent-Length: 1\r\nTransfer-Encoding: chunked\r\n\r\n",
+            "GET http://127.0.0.1/ HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n",
+            "GET http://example.com/ HTTP/1.1\r\nHost: example.com\r\nConnection: host\r\n\r\n"
+        ] { assert((try? parseProxyHTTPRequest(request)) == nil) }
+        let websocket = try parseProxyHTTPRequest("GET http://example.com/ws HTTP/1.1\r\nHost: example.com\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n")
+        assert(websocket.header.contains("Upgrade: websocket") && websocket.header.contains("Connection: Upgrade"))
+        assert((try? parseProxyHTTPRequest("GET http://example.com/ HTTP/1.1\r\nHost: example.com\r\nUpgrade: h2c\r\nConnection: Upgrade\r\n\r\n")) == nil)
+        let before: [String: Any] = ["HTTPEnable": 1, "HTTPProxy": "old.example", "HTTPPort": 8080,
+                                     "ProxyAutoConfigEnable": 1, "FTPPassive": 1, "ExceptionsList": ["internal.example"]]
+        let enabled = systemProxyConfiguration(from: before)
+        assert(enabled["HTTPProxy"] as? String == "127.0.0.1")
+        assert(enabled["ProxyAutoConfigEnable"] as? Int == 0)
+        assert(enabled["FTPPassive"] as? Int == 1)
+        assert(NSDictionary(dictionary: (try? restoredSystemProxy(current: enabled, original: before)) ?? [:]).isEqual(to: before))
+        var edited = enabled; edited["FTPPassive"] = 0
+        assert(((try? restoredSystemProxy(current: edited, original: before)) ?? [:])["FTPPassive"] as? Int == 0)
+        edited["HTTPProxy"] = "external.example"
+        assert((try? restoredSystemProxy(current: edited, original: before)) == nil)
+        assert(NSDictionary(dictionary: (try? restoredSystemProxy(current: before, original: before)) ?? [:]).isEqual(to: before))
+        assert(NSDictionary(dictionary: systemProxyConfiguration(from: enabled)).isEqual(to: enabled))
+        assert((try? restoredProxyProtocolEnabled(current: true, original: false)) == false)
+        assert((try? restoredProxyProtocolEnabled(current: false, original: false)) == false)
+        assert((try? restoredProxyProtocolEnabled(current: true, original: true)) == true)
+        assert((try? restoredProxyProtocolEnabled(current: false, original: true)) == nil)
+        let emptyRestored = try restoredSystemProxy(current: systemProxyConfiguration(from: [:]), original: [:])
+        assert(emptyRestored.isEmpty)
+        // VPN utilities may clear addresses while leaving Direct Sites' bypass list behind.
+        var reset = systemProxyConfiguration(from: ["FTPPassive": 1])
+        for prefix in ["HTTP", "HTTPS"] {
+            reset[prefix + "Enable"] = 0
+            reset[prefix + "Proxy"] = ""
+            reset[prefix + "Port"] = ""
+        }
+        reset["FTPPassive"] = 0
+        let recovered = try maintainedSystemProxy(current: reset, original: before)
+        assert(recovered["HTTPProxy"] as? String == "127.0.0.1")
+        assert(recovered["HTTPSEnable"] as? Int == 1)
+        assert(recovered["FTPPassive"] as? Int == 0)
+        let restoredReset = try restoredSystemProxy(current: reset, original: before)
+        assert(restoredReset["HTTPProxy"] as? String == "old.example")
+        assert(restoredReset["FTPPassive"] as? Int == 0)
+        var partial = enabled
+        partial["HTTPEnable"] = 0
+        let recoveredPartial = try maintainedSystemProxy(current: partial, original: before)
+        let recoveredOriginal = try maintainedSystemProxy(current: before, original: before)
+        let recoveredOwned = try maintainedSystemProxy(current: enabled, original: before)
+        assert(recoveredPartial["HTTPEnable"] as? Int == 1)
+        assert(recoveredOriginal["HTTPProxy"] as? String == "127.0.0.1")
+        assert(NSDictionary(dictionary: recoveredOwned).isEqual(to: enabled))
+        for key in ["HTTPProxy", "HTTPSProxy"] {
+            var foreign = enabled
+            foreign[key] = "foreign.example"
+            assert((try? maintainedSystemProxy(current: foreign, original: before)) == nil)
+            assert((try? restoredSystemProxy(current: foreign, original: before)) == nil)
+        }
+        for key in ["HTTPPort", "HTTPSPort"] {
+            var foreign = enabled
+            foreign[key] = 9999
+            assert((try? maintainedSystemProxy(current: foreign, original: before)) == nil)
+        }
+        for key in ["SOCKSEnable", "ProxyAutoConfigEnable", "ProxyAutoDiscoveryEnable"] {
+            var foreign = enabled
+            foreign[key] = 1
+            assert((try? maintainedSystemProxy(current: foreign, original: before)) == nil)
+        }
         print("Core contract tests passed")
     }
 }

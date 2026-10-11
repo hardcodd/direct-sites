@@ -1,16 +1,17 @@
 import Foundation
 import Darwin
 
-/// Local SOCKS5 proxy. TLS bytes are relayed unchanged; only destination names are inspected.
+/// Local HTTP/HTTPS and SOCKS5 proxy. TLS bytes are relayed unchanged; only destination names are inspected.
 final class BrowserProxy: @unchecked Sendable {
     private let rulesPath: String
+    private let port: UInt16
     private let lock = NSLock()
     private var health = ProxyHealth()
     private var gateways: [Int32: String] = [:]
     private var gatewayTime = Date.distantPast
     private let slots = DispatchSemaphore(value: 128)
 
-    init(rulesPath: String = configPath) { self.rulesPath = rulesPath }
+    init(rulesPath: String = configPath, port: UInt16 = proxyPort) { self.rulesPath = rulesPath; self.port = port }
 
     /// Binds only IPv4 loopback. A occupied port is an error, never an alternate public bind.
     func serve() throws {
@@ -22,12 +23,12 @@ final class BrowserProxy: @unchecked Sendable {
         var address = sockaddr_in()
         address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
         address.sin_family = sa_family_t(AF_INET)
-        address.sin_port = proxyPort.bigEndian
+        address.sin_port = port.bigEndian
         _ = inet_pton(AF_INET, "127.0.0.1", &address.sin_addr)
         let result = withUnsafePointer(to: &address) { pointer in
             pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.bind(listener, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
         }
-        guard result == 0, listen(listener, 128) == 0 else { throw AppError(message: "Proxy port 17879 is already in use or inaccessible") }
+        guard result == 0, listen(listener, 128) == 0 else { throw AppError(message: "Proxy port \(port) is already in use or inaccessible") }
         while true {
             let client = accept(listener, nil, nil)
             guard client >= 0 else { if errno == EINTR { continue }; throw AppError(message: "Proxy accept failed") }
@@ -39,10 +40,10 @@ final class BrowserProxy: @unchecked Sendable {
         }
     }
 
-    private func handle(_ client: Int32) throws {
+    func handle(_ client: Int32) throws {
         Self.configure(client, seconds: 10)
         let first = try Self.readExactly(client, 1)[0]
-        if first == 71 { try serveHTTP(client); return } // Only GET is accepted on the read-only local endpoint.
+        if (65...90).contains(first) { try serveHTTP(client, first: first); return }
         guard first == 5 else { return }
         let count = Int(try Self.readExactly(client, 1)[0])
         guard count > 0, try Self.readExactly(client, count).contains(0) else { try Self.sendAll(client, [5, 255]); return }
@@ -78,40 +79,66 @@ final class BrowserProxy: @unchecked Sendable {
         do { remote = try connect(host, port: port, direct: direct) }
         catch { try Self.reply(client, code: 4); return }
         defer { close(remote) }
-        lock.lock()
-        if direct {
-            health.directConnections += 1
-            if !health.matchedHosts.contains(host) { health.matchedHosts = Array((health.matchedHosts + [host]).suffix(100)) }
-        } else { health.normalConnections += 1 }
-        lock.unlock()
+        recordConnection(host: host, direct: direct)
         try Self.reply(client, code: 0)
         Self.configure(client, seconds: 30)
         try Self.relay(client, remote)
     }
 
-    /// Serves only PAC and aggregate health. Host checks prevent DNS-rebinding reads.
-    private func serveHTTP(_ client: Int32) throws {
-        var bytes: [UInt8] = [71]
-        while bytes.count < 8192 && !bytes.suffix(4).elementsEqual([13, 10, 13, 10]) {
+    private func recordConnection(host: String, direct: Bool) {
+        lock.lock()
+        defer { lock.unlock() }
+        if direct {
+            health.directConnections += 1
+            if !health.matchedHosts.contains(host) { health.matchedHosts = Array((health.matchedHosts + [host]).suffix(100)) }
+        } else { health.normalConnections += 1 }
+    }
+
+    /// Keeps read-only local endpoints isolated from forwarded requests by exact Host and origin-form checks.
+    private func serveHTTP(_ client: Int32, first: UInt8) throws {
+        var bytes: [UInt8] = [first]
+        while bytes.count < 32768 && !bytes.suffix(4).elementsEqual([13, 10, 13, 10]) {
             bytes += try Self.readExactly(client, 1)
         }
         guard bytes.suffix(4).elementsEqual([13, 10, 13, 10]), let request = String(bytes: bytes, encoding: .utf8) else { return }
         let lines = request.components(separatedBy: "\r\n")
         let path = lines[0].split(separator: " ")
-        let hosts = lines.filter { $0.lowercased().hasPrefix("host:") }
-        guard path.count == 3, hosts.count == 1,
-              hosts[0].dropFirst(5).trimmingCharacters(in: .whitespaces) == "127.0.0.1:\(proxyPort)" else { return }
-        let body: Data
-        let type: String
-        switch path[1] {
-        case "/proxy.pac": body = Data(proxyPAC.utf8); type = "application/x-ns-proxy-autoconfig"
-        case "/status":
-            lock.lock(); let snapshot = health; lock.unlock()
-            body = try JSONEncoder().encode(snapshot); type = "application/json"
-        default: return
+        if path.count == 3, path[0] == "GET", path[1].hasPrefix("/") {
+            let hosts = lines.filter { $0.lowercased().hasPrefix("host:") }
+            guard hosts.count == 1, hosts[0].dropFirst(5).trimmingCharacters(in: .whitespaces) == "127.0.0.1:\(port)" else { return }
+            let body: Data
+            let type: String
+            switch path[1] {
+            case "/proxy.pac": body = Data(proxyPAC.utf8); type = "application/x-ns-proxy-autoconfig"
+            case "/status":
+                lock.lock(); let snapshot = health; lock.unlock()
+                body = try JSONEncoder().encode(snapshot); type = "application/json"
+            default: return
+            }
+            let header = "HTTP/1.1 200 OK\r\nContent-Type: \(type)\r\nContent-Length: \(body.count)\r\nCache-Control: no-store\r\nConnection: close\r\nX-Content-Type-Options: nosniff\r\n\r\n"
+            try Self.sendAll(client, Array(header.utf8) + body)
+            return
         }
-        let header = "HTTP/1.1 200 OK\r\nContent-Type: \(type)\r\nContent-Length: \(body.count)\r\nCache-Control: no-store\r\nConnection: close\r\nX-Content-Type-Options: nosniff\r\n\r\n"
-        try Self.sendAll(client, Array(header.utf8) + body)
+        let parsed: ProxyHTTPRequest
+        do { parsed = try parseProxyHTTPRequest(request) }
+        catch { try Self.sendAll(client, Array("HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".utf8)); return }
+        let remote: Int32
+        let direct: Bool
+        do {
+            let rules = try readJSON([Rule].self, rulesPath)
+            direct = rules.contains { matchesRule(parsed.host, rule: $0) }
+            remote = try connect(parsed.host, port: parsed.port, direct: direct)
+        } catch {
+            try Self.sendAll(client, Array("HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".utf8))
+            return
+        }
+        defer { close(remote) }
+        recordConnection(host: parsed.host, direct: direct)
+        if parsed.isTunnel {
+            try Self.sendAll(client, Array("HTTP/1.1 200 Connection Established\r\n\r\n".utf8))
+        } else { try Self.sendAll(remote, Array(parsed.header.utf8)) }
+        Self.configure(client, seconds: 30)
+        try Self.relay(client, remote)
     }
 
     /// Refreshes physical interface selection without changing routes or DNS settings.

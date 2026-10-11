@@ -3,10 +3,12 @@ set -euo pipefail
 cd "${0:A:h}"
 app="$TMPDIR/DirectSitesBuild/Direct Sites.app"
 rtk mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
-rtk xcrun swiftc -swift-version 6 -warnings-as-errors -module-cache-path "$TMPDIR/DirectSitesModuleCache" -target arm64-apple-macosx14.0 -Onone Source/Core.swift Source/ProxyRouting.swift Source/Favicon.swift Source/Migration.swift Source/ChromeSetup.swift Source/Tests.swift -o "$TMPDIR/DirectSitesTests"
+rtk xcrun swiftc -swift-version 6 -warnings-as-errors -module-cache-path "$TMPDIR/DirectSitesModuleCache" -target arm64-apple-macosx14.0 -Onone Source/Core.swift Source/ProxyRouting.swift Source/HTTPProxy.swift Source/SystemProxy.swift Source/Favicon.swift Source/Migration.swift Source/ChromeSetup.swift Source/RuleList.swift Source/RuleListTests.swift Source/Tests.swift -o "$TMPDIR/DirectSitesTests"
 rtk "$TMPDIR/DirectSitesTests"
-rtk xcrun swiftc -swift-version 6 -warnings-as-errors -module-cache-path "$TMPDIR/DirectSitesModuleCache" -target arm64-apple-macosx14.0 -O Source/Core.swift Source/ProxyRouting.swift Source/Migration.swift Source/BrowserProxy.swift Source/Helper.swift -o "$app/Contents/Resources/DirectSitesHelper"
-rtk xcrun swiftc -swift-version 6 -warnings-as-errors -module-cache-path "$TMPDIR/DirectSitesModuleCache" -target arm64-apple-macosx14.0 -O Source/Core.swift Source/ProxyRouting.swift Source/Favicon.swift Source/Migration.swift Source/ChromeSetup.swift Source/App.swift -o "$app/Contents/MacOS/DirectSites" -framework AppKit
+rtk xcrun swiftc -swift-version 6 -warnings-as-errors -module-cache-path "$TMPDIR/DirectSitesModuleCache" -target arm64-apple-macosx14.0 -Onone Source/Core.swift Source/ProxyRouting.swift Source/HTTPProxy.swift Source/BrowserProxy.swift Source/ProxyTests.swift -o "$TMPDIR/DirectSitesProxyTests"
+rtk "$TMPDIR/DirectSitesProxyTests"
+rtk xcrun swiftc -swift-version 6 -warnings-as-errors -module-cache-path "$TMPDIR/DirectSitesModuleCache" -target arm64-apple-macosx14.0 -O Source/Core.swift Source/ProxyRouting.swift Source/HTTPProxy.swift Source/SystemProxy.swift Source/Migration.swift Source/BrowserProxy.swift Source/Helper.swift -o "$app/Contents/Resources/DirectSitesHelper"
+rtk xcrun swiftc -swift-version 6 -warnings-as-errors -module-cache-path "$TMPDIR/DirectSitesModuleCache" -target arm64-apple-macosx14.0 -O Source/Core.swift Source/ProxyRouting.swift Source/HTTPProxy.swift Source/SystemProxy.swift Source/Favicon.swift Source/Migration.swift Source/ChromeSetup.swift Source/RuleList.swift Source/App.swift -o "$app/Contents/MacOS/DirectSites" -framework AppKit
 rtk cp Source/Info.plist "$app/Contents/Info.plist"
 rtk cp -R Source/ru.lproj Source/en.lproj "$app/Contents/Resources/"
 rtk ditto ChromeExtension "$app/Contents/Resources/ChromeExtension"

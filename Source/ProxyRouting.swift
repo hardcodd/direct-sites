@@ -15,7 +15,7 @@ function FindProxyForURL(url, host) {
 """
 
 struct ProxyHealth: Codable, Sendable {
-    var version = 1
+    var version = 2
     var directConnections: Int = 0
     var normalConnections: Int = 0
     var matchedHosts: [String] = []

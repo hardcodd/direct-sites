@@ -1,153 +1,158 @@
-<p align="center">
-  <img src="assets/direct-sites-hero.png" alt="Illustration of Direct Sites routing selected macOS browser traffic directly while other traffic keeps its normal system route" width="100%">
-</p>
+**English** | [Русский](README.ru.md)
 
-<p align="center">
-  <img src="AppIcon-preview.png" alt="Direct Sites application icon" width="112">
-</p>
-
+<p align="center"><img src="assets/direct-sites-hero.png" alt="Direct Sites routes selected macOS browser traffic directly while other traffic follows the normal system route" width="100%"></p>
+<p align="center"><img src="AppIcon-preview.png" alt="Direct Sites icon" width="112"></p>
 <h1 align="center">Direct Sites</h1>
+<p align="center"><strong>Selected sites outside your VPN. Other traffic follows its normal route.</strong></p>
+<p align="center">A native macOS utility with domain and subdomain rules for browsers and IP exceptions for other applications.</p>
+<p align="center"><a href="https://github.com/hardcodd/direct-sites/releases/latest">Download for macOS</a> · <a href="CHANGELOG.md">Changelog</a> · <a href="SPECS.md">Specification</a> · <a href="LICENSE">MIT License</a></p>
 
-<p align="center">
-  <strong>Выбранные сайты — напрямую. Остальной трафик — по обычному маршруту, включая VPN.</strong>
-</p>
+## Why Direct Sites
 
-<p align="center">
-  Нативная утилита для macOS: направляет нужные сайты напрямую в Firefox и Google Chrome, включая поддомены, и создаёт IP-исключения для других приложений.
-</p>
-
-<p align="center">
-  <a href="https://github.com/hardcodd/direct-sites/releases/latest"><strong>Скачать последнюю версию для macOS</strong></a>
-  &nbsp;·&nbsp;
-  <a href="CHANGELOG.md">История изменений</a>
-  &nbsp;·&nbsp;
-  <a href="SPECS.md">Спецификация</a>
-  &nbsp;·&nbsp;
-  <a href="LICENSE">MIT License</a>
-</p>
-
-## Почему Direct Sites
-
-| | Что это даёт |
+| Capability | Behavior |
 | --- | --- |
-| **Точные доменные правила** | Добавь `example.com` — Firefox или Chrome подключатся напрямую к нему и к `api.example.com`, но не к похожим или чужим доменам. |
-| **VPN остаётся маршрутом по умолчанию** | Неподходящий под правило трафик использует обычную системную маршрутизацию, в том числе активный VPN. Direct Sites не меняет системный маршрут по умолчанию. |
-| **Нативно и прозрачно** | Swift/AppKit без сторонних библиотек. TLS передаётся без расшифровки, сертификаты не устанавливаются. |
-| **Не только браузеры** | Для других приложений доступны исключения по IP с проверкой маршрутов в фоне. |
+| Domain rules | `example.com` covers its subdomains, including `api.example.com`, without matching unrelated domains. |
+| VPN remains the default | Unmatched traffic follows normal system routing, including an active VPN. The system default route is unchanged. |
+| Native implementation | Swift/AppKit without third-party libraries. TLS is relayed without decryption or installed certificates. |
+| Other applications | IP exceptions provide direct host routes with background checks. |
 
-Приложение доступно на русском и английском. Список правил сохраняется, а фоновые службы продолжают работать после закрытия окна.
+The interface supports English and Russian. Saved rules and background services continue working after you close the window.
 
-## Требования и установка
+## Requirements and installation
 
-- Mac с Apple Silicon. Сборка нацелена на macOS 14+, фактически проверена на macOS 27; Intel и более ранние версии macOS не проверялись.
-- Права администратора для установки, изменения списка и удаления служб.
-- Firefox или Google Chrome для режима домена со всеми поддоменами.
-- VPN должен разрешать соединения через физический сетевой интерфейс. Жёсткий Kill Switch может их блокировать.
+- Apple Silicon Mac. The build targets macOS 14+ and has been tested on macOS 27. Intel and older macOS versions remain unverified.
+- Administrator authorization to install, change rules, configure system proxies or remove services.
+- Browsers that honor macOS HTTP/HTTPS proxy settings. System mode targets Safari, Chrome, Yandex and Firefox; compatibility needs verification in each browser version.
+- A VPN that permits connections through the physical interface. A strict kill switch may block them.
 
-Скачай `Direct-Sites-v0.3.0-macOS-arm64.zip` из релиза, распакуй и перенеси **Direct Sites.app** в **Applications / Программы**. Архив содержит локальную ad-hoc подпись, но не Developer ID и не нотариализацию Apple. Поэтому macOS может заблокировать первый запуск скачанного приложения. Если доверяешь исходникам и происхождению архива, используй предусмотренное macOS разрешение открытия в настройках конфиденциальности и безопасности либо собери приложение самостоятельно.
+The published `Direct-Sites-v0.3.0-macOS-arm64.zip` supports Firefox PAC and the Chrome extension. **System mode is an unreleased source change; build from source to use it.** Extract the archive and move **Direct Sites.app** to **Applications**. It is ad-hoc signed, without Apple Developer ID signing or notarization. macOS may block its first launch. If you trust the source and archive, use the macOS Privacy & Security approval flow or build the application yourself.
 
-Первый запуск окна не устанавливает службы. Установка происходит при нажатии **Apply / Применить** с системным запросом администратора. Приложение не получает и не сохраняет пароль.
+Opening the window does not install services. **Apply** installs them through the system administrator prompt. The application never receives or stores your password.
 
-## Браузеры: основной домен и все поддомены
+## Browsers: domains and subdomains
 
-1. Нажми **Add site / Добавить сайт**, введи домен и удобное название.
-2. Оставь включённой опцию **Domain and all subdomains — browser mode / Домен и все поддомены — режим браузера**.
-3. Нажми **Apply / Применить** и подтверди системный запрос.
+### Finding and organizing rules (unreleased)
 
-### Firefox
+Use the search field or **⌘F** to find names, domains and IP addresses. Paste a full URL to search its host; Unicode domain spelling, resolved IPs and observed browser hosts are searchable too. Multiple words narrow the results. **Escape** clears the query, and **Reset** clears both the search and rule filter.
 
-1. Нажми **Set up Firefox… / Настройка Firefox…**, чтобы скопировать адрес PAC.
-2. В настройках Firefox найди `proxy` или «прокси» и открой настройки соединения. Сохрани прежний режим, затем выбери **Automatic proxy configuration URL / URL автоматической настройки прокси** и вставь:
+Sort by address, name or original order, and use the arrow to reverse it. Filter browser rules, IP routes or rules needing attention. Groups can be collapsed by type, organized under related configured domains, or removed entirely. Related-domain groups use existing parent rules; unrelated domains remain together. Search temporarily expands matching groups. Grouping, sorting, filters and collapsed groups are remembered on this Mac; they do not reorder stored rules or change routing. Edit and removal always target the selected rule, including after sorting or searching.
+
+To remove every domain and IP address at once, choose **Clear list…**, confirm, then choose **Apply**. This includes rules hidden by search, filters or collapsed groups. Cancel keeps the list intact; clearing keeps the services and system proxy mode installed.
+
+### Add a rule
+
+1. Choose **Add site**, enter a domain and a friendly name.
+2. Keep **Domain and all subdomains — browser mode** enabled.
+3. Choose **Apply** and authorize the change.
+
+### Shared system mode (unreleased)
+
+1. Choose **Enable system proxy**. The app applies the current list and updates services, then sets HTTP/HTTPS proxies to `127.0.0.1:17879` on enabled physical Ethernet/Wi-Fi services and the primary registered network service, including a VPN. macOS requests administrator authorization.
+2. Safari, Chrome and Yandex use system settings unless an extension or policy overrides them. Disable the previous Direct Sites Chrome extension and other proxy overrides.
+3. In each Firefox profile, open the connection/proxy dialog in **Settings** and choose **Use system proxy settings** instead of the previous PAC URL. In newer layouts it is under **Privacy and security → Connection and software security → Configure proxy**; older layouts offer **Network Settings** in **General**. Settings search may not find this panel.
+4. With your VPN active, check a listed site, its subdomain and a site outside the list. Configured proxy status does not establish website availability.
+
+Previous preferences are saved in a root-only recovery file. **Disable system proxy** restores them while preserving unrelated network preferences and IP routes. Service removal restores system proxies first. While enabled, the background monitor restores cleared or disabled proxy settings after network changes, with a five-second fallback check. Slow route/DNS operations can delay a check. Newly selected registered services are backed up before configuration. An active foreign proxy reports a conflict and retains the recovery data. Explicitly disabling system mode stops automatic restoration before restoring saved preferences, even if that restoration fails. If a VPN has no persistent macOS service, system mode reports that it is unsupported.
+
+System mode also affects other applications that honor macOS proxies. SSH and software that ignores them continue using IP exceptions. It temporarily disables system SOCKS, PAC and auto-discovery and replaces proxy exceptions with local destinations (`localhost`, `*.localhost`, `127.*`, `::1`, and simple hostnames). Previous values return on disable. The proxy settings and proxy protocol enablement of the primary registered service, including a VPN, are also configured and restored. VPN server, tunnel configuration and the default route remain unchanged. If the local service is unavailable, applications may lose website access; disable system mode to recover previous preferences.
+
+The following legacy options remain available for individual browsers and are unnecessary in system mode.
+
+### Legacy Firefox PAC
+
+1. Choose **Legacy Firefox PAC…** to copy the PAC URL.
+2. Open Firefox connection settings, note the previous mode, select **Automatic proxy configuration URL** and paste:
 
    ```text
    http://127.0.0.1:17879/proxy.pac
    ```
 
-3. Firefox должен передавать доменные имена через SOCKS5. Если доступна настройка **Proxy DNS when using SOCKS v5**, включи её. В некоторых версиях Firefox она скрыта в режиме PAC.
+3. Firefox must send destination names through SOCKS5. Enable **Proxy DNS when using SOCKS v5** if available; some Firefox versions hide it in PAC mode.
 
-### Google Chrome
+### Legacy Chrome extension
 
-1. Нажми **Set up Chrome… / Настройка Chrome…**. Приложение скопирует расширение в папку поддержки текущего пользователя и скопирует путь к ней в буфер обмена.
-2. Открой страницу расширений из появившегося окна. В Chrome включи **Developer mode / Режим разработчика** и нажми **Load unpacked / Загрузить распакованное расширение**.
-3. В окне выбора папки нажми **Command-Shift-G**, вставь скопированный путь и выбери папку. Chrome попросит разрешить расширению управлять его прокси-настройками.
-4. Убедись, что расширение **Direct Sites for Chrome** включено. Устанавливай его отдельно в каждом профиле Chrome, где нужен обход VPN. После обновления приложения снова нажми **Настройка Chrome**, чтобы скопировать новые файлы, затем **Reload / Обновить** на карточке расширения.
+1. Choose **Legacy Chrome extension…**. The app copies the bundled extension into your Application Support directory and copies its folder path.
+2. Open the extension manager from the dialog. Enable **Developer mode**, then **Load unpacked**.
+3. In the folder picker, press **Command-Shift-G**, paste the path and choose the folder. Chrome requests permission for the extension to manage proxy settings.
+4. Enable **Direct Sites for Chrome** in each profile that needs it. After updating the app, run extension setup again, then choose **Reload** on its extension card.
 
-Расширение задаёт локальный PAC только для выбранного профиля Chrome. Системные настройки прокси macOS оно не меняет. Если расширение или локальная служба отключены, доступ браузера к сайтам может нарушиться; перед удалением службы отключи расширение.
+The extension configures only its Chrome profile; it does not change macOS proxies. An unavailable local service may interrupt browser access. Disable the extension before removing the service.
 
-Открой нужный сайт в настроенном браузере. Выбери правило в Direct Sites: в подробностях появятся имена, для которых успешно установлено прямое соединение.
+Open a listed site, then select its rule in Direct Sites. Details show hostnames for which direct connections were established. For example, `beget.com` covers `cp.beget.com` and `api-cp.beget.com`. Add external authentication domains separately. `example.com` does not cover `example.com.other.org`.
 
-Например, правило `beget.com` охватывает `cp.beget.com`, `api-cp.beget.com` и другие поддомены. Домены сторонней авторизации или другого сервиса нужно добавить отдельно. Правило `example.com` не охватывает `example.com.other.org`.
+Configured browser traffic passes through the local service. Matching destinations connect through Ethernet/Wi-Fi; others use normal system routing, including the VPN. Local destinations bypass the proxy.
 
-Через локальную службу проходит весь трафик настроенного браузера, который использует эту прокси-настройку. Совпавшие адреса подключаются через Ethernet/Wi-Fi, остальные используют обычную системную маршрутизацию, в том числе VPN. Локальные `localhost`, `127.*` и `::1` исключены из PAC.
+TCP, HTTPS and WSS are supported. SOCKS UDP/QUIC is unsupported. TLS is not decrypted and no certificates are installed. DNS follows system settings; DNS VPN bypass is not guaranteed.
 
-Поддерживаются TCP-соединения, включая HTTPS и WebSocket. SOCKS UDP/QUIC не поддерживается. TLS передаётся без расшифровки, сертификаты не устанавливаются. DNS использует системные настройки; приложение не гарантирует обход VPN для DNS-запросов.
+**Disable system mode before stopping the service. For legacy browser setup, restore Firefox's previous proxy mode and disable the Chrome extension.** Closing the GUI is safe: services run independently.
 
-**Перед остановкой или удалением службы верни прежний режим прокси Firefox и отключи расширение Chrome.** Иначе браузеры останутся настроены на недоступный прокси. Закрывать окно Direct Sites можно: службы работают независимо от него.
+## IP exceptions for other applications
 
-## Исключения по IP для всех приложений
+Add an IP or exact domain and turn off the subdomain option. Numeric addresses always use route mode. The helper resolves domains into IPv4/IPv6 addresses and creates host routes through the physical gateway without changing the default route.
 
-Добавь IP или точный домен и отключи опцию всех поддоменов. IP-адрес всегда использует режим маршрутов. Служба разрешает домен в IPv4/IPv6 и создаёт отдельные маршруты через физический шлюз, не изменяя системный маршрут по умолчанию.
+Exceptions cover the whole IP, including other sites sharing it. Subdomains are not automatically included. CDN addresses may differ between browser and helper DNS responses, so route mode cannot cover every website.
 
-Исключение действует на IP целиком, включая другие сайты на этом адресе. Поддомены автоматически не охватываются; для браузера удобнее доменный режим. CDN может возвращать разные IP браузеру и службе, поэтому режим маршрутов подходит не для каждого сайта.
+Routes are checked every 30 seconds. DNS failure preserves previously resolved addresses. Network changes and VPN reconnections are handled on the next successful pass; slow operations can extend the interval. Missing direct IPv6 gateways are reported.
 
-Служба сверяет маршруты каждые 30 секунд. Ошибка DNS сохраняет ранее найденные адреса. После смены сети или переподключения VPN восстановление происходит на следующем успешном проходе; длительные операции могут увеличить задержку. Отсутствие прямого IPv6-шлюза отображается как предупреждение.
+Existing manual routes remain external: the app never adopts or deletes them. Removing a rule removes only owned routes whose current parameters still match the recorded values. Shared IPs remain while another rule needs them. Figma and terminal IP exceptions operate independently of system proxy mode.
 
-Существующие ручные маршруты считаются внешними: приложение их не присваивает и не удаляет. Удаление записи снимает только маршруты, созданные службой и всё ещё совпадающие с её данными. Общий IP остаётся, пока он нужен другой записи.
+## Rules and status
 
-## Список сайтов и состояние
+Input accepts domains, HTTP(S) URLs and IP addresses. Only a URL's host is retained. Names can be edited; an empty name defaults to the domain. Favicons are discovered in the site's home page and then at `/favicon.ico`. Browser rules fetch icons through the local SOCKS proxy. Successful images are cached and displayed during outages; updates are checked on the next GUI launch. Failed requests retry with increasing delays while the window is open. Missing icons use the default symbol. IP rules do not fetch icons. Page titles are not extracted.
 
-Принимаются домены, HTTP(S) URL и IP. Из URL используется только хост. Название можно отредактировать; пустое название заменяется доменом. Приложение ищет фавиконку в HTML главной страницы сайта и затем по адресу `/favicon.ico`. Для браузерных правил запросы проходят через локальный прокси Direct Sites. Удачно загруженная иконка сохраняется в локальном кэше: она видна при временной недоступности сайта, а обновление проверяется при следующем запуске приложения. Неудачные запросы повторяются с увеличивающейся задержкой, пока окно открыто. Если доступную иконку получить не удалось, отображается стандартный значок. Для IP-адресов иконки не загружаются. Название страницы автоматически не извлекается.
+Rule changes take effect after **Apply**. Applying restarts the proxy and may interrupt connections. **Direct** confirms a route; **Ready for browsers** confirms local service availability. Neither guarantees successful website loading or login.
 
-Все изменения вступают в силу после **Apply / Применить**. Применение перезапускает прокси и может прервать текущие соединения. Статус «Напрямую» подтверждает маршрут, а «Готово для браузеров» — доступность локальной службы; это не гарантирует загрузку сайта или успешный вход.
+## Background services and data
 
-## Фоновые службы и данные
-
-| Компонент | Назначение |
+| Component | Purpose |
 | --- | --- |
-| `app.directsites` | Root-служба для проверки и изменения IP-маршрутов |
-| `app.directsites.browser` | SOCKS5-прокси от пользователя `nobody` |
-| `/Library/Application Support/DirectSites/` | Копия helper, `rules.json`, `state.json` и блокировка |
-| `/Library/LaunchDaemons/` | Два задания launchd |
-| `127.0.0.1:17879` | SOCKS5, `/proxy.pac` и `/status` |
+| `app.directsites` | Root service for host routes and background system proxy maintenance |
+| `app.directsites.browser` | HTTP/HTTPS and SOCKS5 proxy running as `nobody` |
+| `/Library/Application Support/DirectSites/` | Helper copy, `rules.json`, `state.json`, proxy recovery journal, mode marker and lock |
+| `/Library/LaunchDaemons/` | Two launchd jobs |
+| `127.0.0.1:17879` | Proxy listener, `/proxy.pac` and `/status` |
 
-Службы настроены на автоматический запуск после загрузки macOS. Восстановление после реальной перезагрузки пока не проверено. Перемещение или удаление самого `.app` не удаляет установленную копию helper. При применении новой версии приложение заменяет задания прежней версии после проверки их путей и команд, сохраняя список и данные о принадлежащих службе маршрутах.
+Services start automatically at boot; real reboot recovery remains unverified. Moving or deleting the GUI bundle does not remove its installed helper. Applying a newer version replaces validated legacy jobs while preserving rules and owned routes.
 
-Список и состояние доступны для чтения локальным пользователям; изменять их может администратор. Прокси слушает только loopback, но доступен другим процессам и пользователям этого Mac без аутентификации. Это не средство изоляции локальных аккаунтов. `/status` хранит в памяти счётчики соединений и до 100 совпавших имён; URL-пути и пароли не сохраняются.
+Rules and route state are readable by local users and writable by the administrator. The proxy recovery file is root-only. The listener binds only to loopback but is available to other processes and users without authentication; it is not a local-account isolation boundary. `/status` retains counters and up to 100 matched hostnames in memory, without URL paths or passwords.
 
-## Удаление
+## Removal
 
-1. Восстанови прежние настройки прокси Firefox и отключи расширение Direct Sites в Chrome.
-2. В Direct Sites нажми **Remove service… / Удалить службу…** и подтверди удаление.
-3. После успешного завершения удали приложение из «Программ».
+1. Disable system mode. Switch legacy PAC profiles to system settings and disable the Chrome extension. Service removal also restores system preferences automatically.
+2. Choose **Remove service…** and confirm.
+3. After successful removal, delete the application from Applications.
 
-Удаляются обе службы, сохранённый список и управляемые маршруты. Внешние маршруты сохраняются. При ошибке очистки повтори удаление; пустой каталог с файлом блокировки может остаться.
+Both services, saved rules and owned routes are removed. External routes remain. Retry after cleanup errors; an empty directory containing the lock file may remain.
 
-## Сборка из исходников
+## Build from source
 
-Нужны macOS, Apple Command Line Tools со Swift 6, `iconutil`, `codesign` и [RTK](https://github.com/rtk-ai/rtk). Проверенная среда: Swift 6.4 и macOS SDK 27.0. RTK используется только сценарием сборки и не требуется пользователям готового приложения.
+Requires macOS, Apple Command Line Tools with Swift 6, `iconutil`, `codesign` and [RTK](https://github.com/rtk-ai/rtk). Verified toolchain: Swift 6.4 and macOS SDK 27.0. RTK is needed by the build script, not by end users.
 
 ```sh
 rtk zsh build.sh
 ```
 
-Сценарий запускает тесты, собирает arm64 GUI и helper с предупреждениями как ошибками, генерирует иконку, подписывает пакет и проверяет подпись. Результат: `Direct Sites.app` и `Direct Sites.zip` в корне проекта; промежуточные файлы находятся в `$TMPDIR/DirectSitesBuild`. Запускай сборку в обычном локальном окружении: ограничения песочницы могут мешать `iconutil`.
+The script runs contract and proxy protocol tests, builds the arm64 GUI and helper with warnings as errors, generates the icon, signs the bundle and verifies its signature. Outputs: `Direct Sites.app` and `Direct Sites.zip`; intermediates reside in `$TMPDIR/DirectSitesBuild`. Build in a normal local environment: sandbox restrictions may prevent `iconutil` from working.
 
-Для проверки архива распакуй его в локальный временный каталог и выполни `codesign --verify --deep --strict` для `.app`. Облачные каталоги могут добавлять расширенные атрибуты, влияющие на проверку подписи.
+To verify an archive, extract it into a local temporary directory and run `codesign --verify --deep --strict` on the app. Cloud directories may introduce extended attributes that affect signature verification.
 
-| Исходник | Содержание |
+| Source | Responsibility |
 | --- | --- |
-| `Source/App.swift` | Окно, редактирование правил, авторизация и favicon |
-| `Source/ChromeSetup.swift`, `ChromeExtension/` | Подготовка и исходники расширения Chrome |
-| `Source/Core.swift` | Модели, проверка ввода, шлюзы и хранение |
-| `Source/Helper.swift` | Установка, сверка маршрутов и удаление |
-| `Source/Migration.swift` | Определение установленных служб прежней версии |
-| `Source/BrowserProxy.swift` | SOCKS5, TCP relay и локальные HTTP endpoints |
-| `Source/ProxyRouting.swift` | PAC, сопоставление доменов и статистика |
-| `Source/Tests.swift` | Проверки контрактов ядра |
-| `Source/Icon.swift` | Генерация иконки средствами AppKit |
+| `Source/App.swift` | Window, rules, authorization and favicons |
+| `Source/ChromeSetup.swift`, `ChromeExtension/` | Legacy Chrome extension setup and source |
+| `Source/Core.swift` | Models, input validation, gateways and storage |
+| `Source/RuleList.swift`, `Source/RuleListTests.swift` | Search, filters, sorting, group projection and navigation contracts |
+| `Source/Helper.swift` | Installation, route checks and removal |
+| `Source/Migration.swift` | Validated legacy service discovery |
+| `Source/BrowserProxy.swift` | HTTP/HTTPS, SOCKS5, relay and local endpoints |
+| `Source/HTTPProxy.swift`, `Source/ProxyTests.swift` | HTTP parser and protocol tests |
+| `Source/SystemProxy.swift` | System proxy ownership and preference recovery |
+| `Source/ProxyRouting.swift` | PAC, domain matching and connection counters |
+| `Source/Tests.swift` | Core and proxy preference contract tests |
+| `Source/Icon.swift` | AppKit icon generation |
 
-Тесты проверяют нормализацию, некорректный ввод, выбор шлюза, общие IP, сохранение DNS-кэша, защиту чужих маршрутов, границы доменных правил, чтение старой конфигурации, определение прежних служб и установку файлов расширения в пользовательский каталог. Они не заменяют проверку root-службы, Chrome, IPv6, перезагрузки, смены сети и совместимости с конкретным VPN.
+Tests cover normalization, invalid input, gateways, shared IPs, DNS cache, foreign route protection, domain boundaries, old configuration decoding, legacy service discovery, user-local extension setup, HTTP/CONNECT parsing, local endpoint protection, missing configuration errors and managed preference recovery. They do not replace privileged integration tests, all four browser checks, IPv6, reboot, network changes or VPN compatibility testing.
 
-## Лицензия
+## License
 
-MIT. Условия находятся в [LICENSE](LICENSE).
+[MIT](LICENSE).
